@@ -104,37 +104,41 @@ function main({DOM, HTTP}) {
 
   // start-up requests
   const requestStartUp$ = createDarkJedisStream({id: 3616, cursor: 1});
-  const responseSlot1$ = createDarkJediResponse(HTTP, 1)
+  let responseSlot1$ = createDarkJediResponse(HTTP, 1)
   .do(x => {
     requestObserver.onNext({id: x.master.id, cursor: 2});
   });
-  const responseSlot2$ = createDarkJediResponse(HTTP, 2)
+  let responseSlot2$ = createDarkJediResponse(HTTP, 2)
   .do(x => {
     requestObserver.onNext({id: x.master.id, cursor: 3});
   });
-  const responseSlot3$ = createDarkJediResponse(HTTP, 3)
+  let responseSlot3$ = createDarkJediResponse(HTTP, 3)
   .do(x => {
     requestObserver.onNext({id: x.master.id, cursor: 4});
   });
-  const responseSlot4$ = createDarkJediResponse(HTTP, 4)
+  let responseSlot4$ = createDarkJediResponse(HTTP, 4)
   .do(x => {
     requestObserver.onNext({id: x.master.id, cursor: 5});
   });
-  const responseSlot5$ = createDarkJediResponse(HTTP, 5);
+  let responseSlot5$ = createDarkJediResponse(HTTP, 5);
 
   // master-request (click up)
-  const masterRequest$ = upAction$.combineLatest(
-    responseSlot2$, function (x, y) {
-      return y;
-    }
-  )
-  .map(q => {
-    return {
-      url: q.apprentice.url,
-      method: 'GET',
-      cursor: 2,
-    };
+  upAction$.subscribe(function (e) {
+    responseSlot1$ = Cycle.Rx.Observable.return(emptyJedi);
   });
+
+  // const masterRequest$ = upAction$.combineLatest(
+  //   responseSlot2$, function (x, y) {
+  //     return y;
+  //   }
+  // )
+  // .map(q => {
+  //   return {
+  //     url: q.apprentice.url,
+  //     method: 'GET',
+  //     cursor: 2,
+  //   };
+  // });
 
   let siths = [
     responseSlot1$.startWith(emptyJedi),
@@ -144,7 +148,7 @@ function main({DOM, HTTP}) {
     responseSlot5$.startWith(emptyJedi),
   ];
 
-  const request$ = requestStartUp$.merge(masterRequest$);
+  const request$ = requestStartUp$; //.merge(masterRequest$);
 
   return {
     DOM: Cycle.Rx.Observable.return('').map(x =>
