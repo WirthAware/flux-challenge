@@ -3,6 +3,7 @@ import {makeDOMDriver, h} from '@cycle/dom';
 import {makeHTTPDriver} from '@cycle/http';
 
 const { div, span, h1, h2, h3, h6, section, ul, li, button } = require('hyperscript-helpers')(h);
+const DARK_JEDIS_URL = 'http://localhost:3000/dark-jedis/';
 
 const ws = new WebSocket("ws://localhost:4000");
 var data$ = Cycle.Rx.Observable.create(observer => {
@@ -22,11 +23,11 @@ var mock =
   { name: 'Darth Bane', homeworld: {name: 'Apatros'} },
 ];
 
-function renderDashboard(model, siths) {
+function renderDashboard(plant$, siths) {
   return (
     div({ className: 'app-container'}, [
       div({className: 'css-root'}, [
-        renderCurrentPlanet(model.name),
+        renderCurrentPlanet(plant$),
 
         section({ className: 'css-scrollable-list' }, [
           ul({ className: 'css-slots' }, siths.map(jedi =>
@@ -41,18 +42,21 @@ function renderDashboard(model, siths) {
   );
 }
 
-function renderCurrentPlanet(currentPlanet) {
+function renderCurrentPlanet(plant$) {
   return (
-    h1({ className: 'css-planet-monitor' }, 'Obi-Wan currently on ' + currentPlanet)
+    plant$.map(x =>
+      h1({ className: 'css-planet-monitor' }, 'Obi-Wan currently on ' + x.name)
+    )
   );
 }
 
 function renderJedi(model) {
   return (
+    model.map(jedi =>
     li({ className: 'css-slot' }, [
-        h3(model.value.name),
-        h6(model.value.homeworld.name)
-    ])
+        h3(jedi.name),
+        h6(jedi.homeworld.name)
+    ]))
   );
 }
 
@@ -66,100 +70,86 @@ function renderNavigation() {
 }
 
 let requestObserver;
-function getDarkJedis(id, count) {
-  return Cycle.Rx.Observable.create(function (observer) {
+function createDarkJedisStream({id, cursor}) {
+  let requestStream$ = Cycle.Rx.Observable.create(function (observer) {
     requestObserver = observer;
-    observer.onNext({id, count});
+    observer.onNext({id, cursor});
   }, err => {
     observer.onError(err);
-  });
+  })
+
+  return requestStream$
+    .map((x) => {
+      return {
+        url: DARK_JEDIS_URL + String(x.id),
+        method: 'GET',
+        cursor: x.cursor,
+      };
+    });
+}
+
+function createDarkJediResponse(HTTP, slot) {
+  return HTTP
+    .filter(res$ => res$.request.url.indexOf(DARK_JEDIS_URL) === 0 && res$.request.cursor === slot)
+    .flatMap(x => x)
+    .map(res => res.body);
 }
 
 function main({DOM, HTTP}) {
-  const URL = 'http://localhost:3000/dark-jedis/';
-
   const emptyJedi = { name: '', homeworld: { name: '' } }  ;
 
-  let siths = [
-    Cycle.Rx.Observable.just(emptyJedi),
-    Cycle.Rx.Observable.just(emptyJedi),
-    Cycle.Rx.Observable.just(emptyJedi),
-    Cycle.Rx.Observable.just(emptyJedi),
-    Cycle.Rx.Observable.just(emptyJedi),
-  ];
   let model$ = data$.startWith({ name: '?' });
-
   let upAction$ = DOM.select('.up').events('click');
   let downAction$ = DOM.select('.down').events('click');
 
-  let requestJediStream = getDarkJedis(3616); //Cycle.Rx.Observable.return({id: 3616});
+  // start-up requests
+  const requestStartUp$ = createDarkJedisStream({id: 3616, cursor: 1});
+  const responseSlot1$ = createDarkJediResponse(HTTP, 1)
+  .do(x => {
+    requestObserver.onNext({id: x.master.id, cursor: 2});
+  });
+  const responseSlot2$ = createDarkJediResponse(HTTP, 2)
+  .do(x => {
+    requestObserver.onNext({id: x.master.id, cursor: 3});
+  });
+  const responseSlot3$ = createDarkJediResponse(HTTP, 3)
+  .do(x => {
+    requestObserver.onNext({id: x.master.id, cursor: 4});
+  });
+  const responseSlot4$ = createDarkJediResponse(HTTP, 4)
+  .do(x => {
+    requestObserver.onNext({id: x.master.id, cursor: 5});
+  });
+  const responseSlot5$ = createDarkJediResponse(HTTP, 5);
 
-  let getDarkJedis$ = requestJediStream
-    .map((x) => {
-      return {
-        url: URL + String(x.id),
-        method: 'GET'
-      };
-    });
-
-    // .flatMap(id => {
-    //   return Cycle.Rx.Observable.create(observer => {
-    //     observerReq = observer;
-    //     observer.onNext(id);
-    //   }, err => {
-    //     observer.onError(err);
-    //   });
-    // })
-
-  let responseStream$ = HTTP
-              .filter(res$ => res$.request.url.indexOf(URL) === 0)
-              // .mergeAll()
-              .flatMap(x => x)
-              .map(res => res.body);
-
-  const masterRequest$ = upAction$.map(q => {
+  // master-request (click up)
+  const masterRequest$ = upAction$.combineLatest(
+    responseSlot2$, function (x, y) {
+      return y;
+    }
+  )
+  .map(q => {
     return {
-      url: URL + String(3616),
-      method: 'GET'
+      url: q.apprentice.url,
+      method: 'GET',
+      cursor: 2,
     };
   });
 
-  var test = getDarkJedis$.first().combineLatest(responseStream$, function (x, y) {
-    return y;
-  }).startWith(null);
-  test.subscribe(x => {
-    console.log(x);
-  });
+  let siths = [
+    responseSlot1$.startWith(emptyJedi),
+    responseSlot2$.startWith(emptyJedi),
+    responseSlot3$.startWith(emptyJedi),
+    responseSlot4$.startWith(emptyJedi),
+    responseSlot5$.startWith(emptyJedi),
+  ];
 
-  responseStream$.subscribe(x => {
-    console.log(x);
-
-    if (x != null && x.master != null) {
-      requestObserver.onNext({id: x.master.id});
-    }
-  }, err => console.log,
-  () => {
-    console.log('reg completed');
-  });
-
-  const request$ = getDarkJedis$.merge(masterRequest$);
-
-  request$.subscribe(function (x) {
-    console.log(x);
-  });
-
-  var soudce = responseStream$.take(5).toArray();
-  soudce.subscribe(x => {
-    console.log(x);
-  });
+  const request$ = requestStartUp$.merge(masterRequest$);
 
   return {
-    DOM: model$.map(data =>
-      renderDashboard(data, siths)
+    DOM: Cycle.Rx.Observable.return('').map(x =>
+      renderDashboard(model$, siths)
     ),
-    // DOM: siths$.map(x => {
-    //   renderDashboard({name: 'test'}, x)
-    // }),
     HTTP: request$
   };
 }
