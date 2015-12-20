@@ -10,7 +10,6 @@ import { view } from './view';
 import { model } from './model';
 import { intent } from './intent';
 
-import {scrollSize, numberOfSlots} from './const';
 import darkjedifetcher from './datafetcher';
 
 
